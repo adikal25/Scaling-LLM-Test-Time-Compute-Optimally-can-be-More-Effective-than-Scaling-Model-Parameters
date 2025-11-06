@@ -1,6 +1,3 @@
-Perfect — here’s your **final GitHub-ready README.md**, where both questions are formatted as collapsible dropdowns that *reveal the answer only when expanded* (cleaner, interactive style):
-
----
 
 # Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters
 
@@ -25,8 +22,14 @@ By allocating inference-time computation adaptively, they show that a smaller mo
 
 ---
 
+### 🧩 Question 1 — Thinking vs Memorizing
+
+If you could give a student (or model) a limited compute budget,
+would you rather let them read more textbooks before the exam (bigger model)
+or allow them extra time to reason through each question (test-time compute)?
+
 <details>
-<summary><strong>🧩 Click to reveal: Thinking vs Memorizing</strong></summary>
+<summary><strong>Answer</strong></summary>
 
 The paper shows that for infrequent, complex tasks, *extra inference-time thinking* yields higher returns than additional pretraining.
 
@@ -71,12 +74,6 @@ Together, they decide *where* to spend compute.
 
 A verifier that scores partial reasoning steps.
 
-**Analogy:** Like a math teacher giving partial credit as you go.
-
-**Input:** reasoning steps τ = (s₁,…,sₙ)
-**Output:** step-wise scores v₁,…,vₙ
-**Parameters:** base model M, reward head fᵣ
-
 ```
 for step in τ:
     h ← M.encode(step)
@@ -91,11 +88,6 @@ Trained with Monte Carlo rollouts (no human labels) to predict per-step correctn
 
 ### Algorithm 2 — Best-of-N Sampling
 
-Generate N candidate answers and pick the one with the highest verifier score.
-
-**Input:** prompt q, model M, verifier V, samples N
-**Output:** best answer y*
-
 ```
 for i in [1..N]:
     candidate[i] ← M.generate(q)
@@ -108,8 +100,6 @@ Best for **easy problems** where one of many guesses is likely correct.
 ---
 
 ### Algorithm 3 — Beam Search with PRM Guidance
-
-Keeps only the top *k* partial solutions at each step.
 
 ```
 beams ← [M.start(q)]
@@ -126,8 +116,6 @@ Beam search balances **exploration** and **focus** — powerful for moderate-dif
 
 ### Algorithm 4 — Revision Chain Generation
 
-Iteratively improves an answer using previous attempts as feedback.
-
 ```
 context ← q
 for i in [1..n]:
@@ -141,8 +129,6 @@ Works best when the initial reasoning is close to correct.
 ---
 
 ### Algorithm 5 — Compute-Optimal Strategy Selection
-
-Allocates compute budget per question based on estimated difficulty.
 
 ```
 for q in dataset:
@@ -219,12 +205,16 @@ The PRM learns **step-level correctness** without manual labels.
 
 ---
 
-<details>
-<summary><strong>🧩 Click to reveal: Adaptive Budgeting Strategy</strong></summary>
+### 🧩 Question 2 — Adaptive Budgeting
 
-* **Easy questions:** Sequential revisions (refine a near-correct draft).
-* **Hard questions:** Parallel search guided by the PRM (explore broadly).
-* **Medium:** Hybrid 8×8 split (search + revision balance).
+Given a 64-sample compute budget, how would you allocate it for easy vs hard math problems?
+
+<details>
+<summary><strong>Answer</strong></summary>
+
+* **Easy:** Sequential revisions (refine a near-correct draft).
+* **Hard:** Parallel search guided by the PRM (explore broadly).
+* **Medium:** Hybrid 8×8 split between revisions and search.
 
 </details>
 
