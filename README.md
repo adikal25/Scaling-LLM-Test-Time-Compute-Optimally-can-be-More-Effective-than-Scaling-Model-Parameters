@@ -1,7 +1,3 @@
-Here is a properly formatted `README.md` file based on the content you provided.
-
------
-
 # Scaling LLM Test-Time Compute Optimally
 
 **Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²
@@ -317,7 +313,7 @@ $$where $y^*(q)$ is the ground truth answer.
 **Approximation:** Use question difficulty $d(q)$ as sufficient statistic:
 
 $$\\theta^*(q, N) \\approx \\theta^*(d(q), N)
-$$Estimate $\theta^*(d, N)$ on validation set, apply to test questions with same difficulty.
+$$Estimate $\theta^*(d,N)$ on validation set, apply to test questions with same difficulty.
 
 -----
 
