@@ -305,6 +305,23 @@ Finally, the authors formalize when to spend compute on **training larger models
 
 > *Key conclusion:* For low-frequency, high-value reasoning tasks, **adaptive test-time compute** is more efficient than increasing model size.
 
+ ```
+Input Question
+    ↓
+[1. Difficulty Prediction] ← uses PRM scores
+    ↓
+[2. Strategy Router] ← adaptive decision
+    ↓
+[3. Inference Strategy Execution]
+    ├── Easy → Revision Model (sequential refinement)
+    ├── Medium → Hybrid (revision + search)
+    └── Hard → PRM-Guided Beam Search
+    ↓
+[4. Answer Selection] ← PRM scores outputs
+    ↓
+Final Answer
+```
+
 ---
 
 
