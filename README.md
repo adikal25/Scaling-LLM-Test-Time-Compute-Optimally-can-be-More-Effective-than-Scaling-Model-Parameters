@@ -1,228 +1,330 @@
-# Scaling LLM Test-Time Compute Optimally Can Be More Effective than Scaling Model Parameters
+# Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters
 
-**Authors:** Charlie Snell (UC Berkeley), Jaehoon Lee, Kelvin Xu, Aviral Kumar (Google DeepMind)  
-**Presented by:** Adithya Kalidindi **Date:** November 2025  
-**Reference Paper:** [arXiv:2408.03314](https://arxiv.org/abs/2408.03314)  
-**Video Review:** [Yannic Kilcher – Scaling LLM Test-Time Compute (YouTube)](https://www.youtube.com/watch?v=AfAmwIP2ntY&t=2573s)
+[![arXiv](https://img.shields.io/badge/arXiv-2408.03314-b31b1b.svg)](https://arxiv.org/abs/2408.03314)
 
----
-
-## 🧭 Overview
-
-Large Language Models (LLMs) traditionally improve by *increasing parameter count*—bigger models mean higher accuracy but also massive training cost.  
-This paper explores a different idea: **what if, instead of building a bigger model, we give the existing model more “thinking time” at inference?**
-
-Think of it like two students:
-- Student A has a high IQ (large model parameters).  
-- Student B has average IQ but takes extra time to work through a problem (uses more compute per question).  
-
-The study shows that sometimes Student B matches or even outperforms Student A — if the extra time (compute) is used wisely.
+> **Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²
+> **Affiliations:** ¹UC Berkeley, ²Google DeepMind
+> **Presenter:** Adithya Kalidindi
+> **Date:** November 6, 2025
 
 ---
 
-## 🎯 Motivation
+## 📘 1 | Overview
 
-Training compute is finite, but inference compute is often elastic — we can spend more resources only on hard questions.  
-This paper investigates **how to allocate extra test-time compute efficiently**, rather than always scaling parameters.
+When deploying large language models, the dominant instinct has been simple — *make them bigger*.
+But this paper from Google DeepMind and UC Berkeley proposes a counter-idea:
 
-Inspired by systems like **AlphaGo / AlphaZero**, which use **search and verification** during play instead of just a bigger network, the authors apply similar thinking to language models.
+> “What if a smaller model could simply **think longer** at inference time instead of being retrained larger?”
 
----
+In other words: instead of studying harder (adding parameters), a model could **reason more** (use more compute per question).
+By allocating inference-time computation adaptively, they show that a smaller model can outperform one **14× larger** at matched compute — achieving **4× higher efficiency**.
 
-## 🔍 Problem Statement
-
-Can we improve LLM performance by scaling *test-time compute* instead of model size?  
-And if so, how should this compute be distributed for maximum gain?
+**FIGURE PLACEHOLDER #1 – Summary performance comparison**
 
 ---
 
-## 🧩 Key Concepts
+## 🎯 2 | Motivation & Background
 
-| Concept | Description |
-|:--|:--|
-| **Test-Time Compute (TTC)** | Extra FLOPs spent during inference (sampling, search, verification). |
-| **Verifier Model** | Separate model trained to evaluate reasoning steps and answers. |
-| **Iterative Refinement** | Asking the model to revise its own output until it improves. |
-| **Best-of-N Sampling** | Generating multiple answers and picking the best via majority vote or verifier. |
-| **Difficulty-Aware Compute** | Dynamically assigning more compute to hard questions and less to easy ones. |
+Think of exam strategies. Some students memorize everything (big pretraining), others focus on reasoning during the test (test-time compute).
+This research formalizes that second strategy for LLMs.
 
----
+**Prior methods explored:**
 
-## 🧠 Background & Prior Work
+* *Self-Refine:* A model re-reads its own answer and improves it.
+* *Multi-Agent Debate:* Multiple models discuss and vote.
+* *Verifier Models:* Separate “judges” rate answer quality.
 
-Earlier methods like **Self-Refine**, **Debate Models**, and **Majority Voting** showed that re-sampling and verification can improve outputs.  
-However, these methods weren’t analyzed systematically in terms of **compute efficiency vs model scaling**.
+All effective, but uncoordinated. This paper unifies them into one idea:
+**allocate inference compute intelligently based on question difficulty.**
 
-The authors present a unifying framework to measure how much benefit each method provides per unit of extra FLOPs.
+**FIGURE PLACEHOLDER #2 – Prior techniques overview**
 
 ---
-
-## ❓Question 1: Why Does Inference Compute Matter More than Model Size Sometimes?
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary><strong>🧩 Question 1 — Thinking vs. Memorizing</strong></summary>
 
-Training a larger model is like building a bigger brain — expensive and fixed once deployed.  
-Test-time compute is like giving the brain more time to think per question.
+If you could give a student (or model) a limited compute budget,
+would you rather let them read more textbooks before the exam (bigger model)
+or allow them extra time to reason through each question (test-time compute)?
 
-If a system answers **few but difficult queries**, it’s better to spend more compute during inference than to train a giant model.  
-For systems serving millions of simple queries, a bigger model is more efficient.
+**Answer:**
+The paper shows that for infrequent, complex tasks, *extra inference-time thinking* yields higher returns than additional pretraining.
+
 </details>
 
 ---
 
-## 🧮 Algorithm 1: Best-of-N Sampling
+## 🧠 3 | Core Concepts: Proposer–Verifier Framework
 
-Input: Prompt *p*, model *M*, verifier *v*, samples *N*  
-Output: Best response *r\***
+The unified framework views every reasoning process as two coordinated steps:
 
-1. For *i = 1 to N*: generate response *rᵢ = M(p)*  
-2. Score each response *sᵢ = v(rᵢ)*  (quality or correctness)  
-3. Select *r\*** = argmax₍ᵢ₎ *sᵢ*  
+```
+┌───────────────────────────────┐
+│  Test-Time Compute =          │
+│  Proposer (generation) +      │
+│  Verifier (evaluation)        │
+└───────────────────────────────┘
+```
 
-**Intuition:** Generate many possible answers → choose the best one.  
-**Analogy:** Like taking multiple drafts of an essay and submitting the best.  
+* **Proposer:** Generates possible solutions (like drafting multiple essays).
+* **Verifier:** Evaluates reasoning step-by-step (like a teacher grading logic).
 
----
-
-## 🧮 Algorithm 2: Verifier-Weighted Search
-
-Input: Prompt *p*, model *M*, verifier *v*, samples *N*  
-Output: Weighted average response *r\***
-
-1. Generate *N* responses *r₁,…,rₙ*  
-2. Compute scores *sᵢ = v(rᵢ)*   
-3. Weight each response by softmax(sᵢ) → higher weight = better confidence  
-4. Return r\*** = ∑ softmax(sᵢ) · rᵢ  
-
-**Idea:** Not just choose the best response — blend them using verifier confidence.  
+Together, they decide *where* to spend compute.
 
 ---
 
-## 🧮 Algorithm 3: Iterative Refinement (Search via Revision)
+## ⚙️ 4 | Algorithms & Architecture
 
-Input: Prompt *p*, model *M*, verifier *v*, steps *T*  
-Output: Improved answer *r_T*
+### Algorithm 1 — Process Reward Model (PRM)
 
-1. Initialize *r₀ = M(p)*  
-2. For *t = 1 to T*:  
- a. Ask model to revise its own answer: *r_t = M(p + “revise previous answer: r_{t−1}”)*  
- b. Compute score *s_t = v(r_t)*  
- c. Keep the revision if *s_t > s_{t−1}*  
-3. Return *r_T*
+A verifier that scores partial reasoning steps.
 
-**Analogy:** Like proofreading your own essay multiple times until it reads better.  
+**Analogy:** Like a math teacher giving partial credit as you go.
 
----
+**Input:** reasoning steps τ = (s₁,…,sₙ)
+**Output:** step-wise scores v₁,…,vₙ
+**Parameters:** base model M, reward head fᵣ
 
-## 🧮 Algorithm 4: Compute-Optimal Difficulty-Aware Scaling
+```
+for step in τ:
+    h ← M.encode(step)
+    v ← sigmoid(fᵣ(h))
+    store(v)
+return scores
+```
 
-Input: Task set T, difficulty predictor D, compute budget *C_total*  
-Output: Optimal allocation per task Cᵢ  
+Trained with Monte Carlo rollouts (no human labels) to predict per-step correctness.
 
-1. For each task *tᵢ ∈ T*, estimate difficulty *dᵢ = D(tᵢ)*  
-2. Compute weight *wᵢ = softmax(dᵢ)*  
-3. Allocate compute Cᵢ = wᵢ × C_total  
-4. Apply Algorithm 1 or 2 to tᵢ using budget Cᵢ  
-
-**Outcome:** Harder questions get more compute, easy ones less — like a student spending more time on tougher problems.  
+**FIGURE PLACEHOLDER #3 – PRM training**
 
 ---
 
-## ⚙️ Experimental Setup
+### Algorithm 2 — Best-of-N Sampling
 
-- **Dataset:** [MATH dataset](https://arxiv.org/abs/2103.03874) — a collection of mathematical problems with graded difficulty.  
-- **Models:** Base and fine-tuned language models on MATH for step-by-step reasoning.  
-- **Compute budget:** Matched FLOPs between larger and smaller models to compare efficiency fairly.  
-- **Evaluation metric:** Accuracy and FLOPs efficiency (performance per unit compute).
+Generate N candidate answers and pick the one with the highest verifier score.
 
----
+**Analogy:** Write several short answers, submit the one your tutor marks best.
 
-## 📊 Results and Findings
+**Input:** prompt q, model M, verifier V, samples N
+**Output:** best answer y*
 
-| Method | Performance Gain | Compute Usage | Key Insight |
-|:--|:--|:--|:--|
-| Best-of-N Sampling | Strong gain on medium difficulty questions | Linear in N | Simple and robust |
-| Verifier-Weighted Search | Stable improvement | Slightly higher compute | Balances quality & efficiency |
-| Iterative Refinement | Excels on hard tasks | Sequential compute growth | Best for complex problems |
-| Difficulty-Aware Scaling | ≈ 4× better compute efficiency | Adaptive | Dynamic allocation beats static |
+```
+for i in [1..N]:
+    candidate[i] ← M.generate(q)
+    score[i] ← V.score(candidate[i])
+return candidate[argmax(score)]
+```
 
-**Observation:** Models fine-tuned on MATH show that extra inference compute directly improves accuracy, especially for harder problems.  
-Simple methods work well for easy prompts, while iterative search and verification shine for challenging ones.  
+Best suited for **easy problems** where one of many guesses is likely correct.
 
 ---
 
-## ⚖️ Compute vs Parameter Scaling Trade-Off
+### Algorithm 3 — Beam Search with PRM Guidance
 
-| Scenario | Best Strategy |
-|:--|:--|
-| High query volume (frequent use) | Train a larger model – fixed compute per query is cheaper. |
-| Low query volume (hard tasks) | Use more test-time compute – cheaper than training bigger models. |
+Keeps only the top k partial solutions at each step.
 
-**Analogy:** If you sit an exam every day, it pays to study more beforehand (bigger model).  
-If you face a few but very tough exams, it’s better to spend more time on each question (test-time compute).
+**Analogy:** Exploring multiple problem-solving routes but pruning the weakest as you go.
+
+**Input:** prompt q, beam width k, max steps T
+**Output:** final answer y*
+
+```
+beams ← [M.start(q)]
+for t in [1..T]:
+    expanded ← expand(beams, M)
+    scores ← [V.score(b) for b in expanded]
+    beams ← top_k(expanded, scores, k)
+return best_of(beams, V)
+```
+
+Beam search balances **exploration** and **focus** — powerful for moderate-difficulty tasks.
 
 ---
-
-## ❓Question 2: When Is Scaling Inference Compute More Efficient?
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary><strong>🧩 Question 2 — When Search Hurts</strong></summary>
 
-When the model is used infrequently or for tasks with variable difficulty.  
-Allocating more inference compute adaptively saves training resources and boosts performance where it matters most.  
-For mass deployment (e.g., chatbots serving millions), larger models with fixed latency remain better.
+Why might beam search reduce accuracy on *easy* questions?
+
+**Answer:**
+Because the verifier may reward complex reasoning even when the first simple answer was already correct — over-thinking leads to over-optimization.
+
 </details>
 
 ---
 
-## 🧩 Critical Analysis
+### Algorithm 4 — Revision Chain Generation
 
-**Strengths**
-- Unified taxonomy for test-time compute strategies.  
-- First systematic comparison under matched FLOPs.  
-- Demonstrates ~4× efficiency improvement through adaptive compute.  
-- Fine-tuned verifiers and iterative methods enhance reasoning quality.
+Iteratively improves an answer using previous attempts as feedback.
 
-**Limitations**
-- Benchmarked mainly on MATH and reasoning tasks — generalization to open-ended text is unclear.  
-- Verifier training adds its own overhead.  
-- Iterative search can over-optimize and stall on very hard questions.  
-- Doesn’t fully explore interaction with RL or speculative decoding.
+**Analogy:** Like editing an essay draft after reading it aloud.
 
-**Open Questions**
-- Can we automatically predict prompt difficulty accurately enough for real-time allocation?  
-- How to balance search depth vs breadth given fixed compute?  
-- Can test-time optimization be integrated with RL training for fewer verifiers?  
+**Input:** question q, model M, depth n
+**Output:** refined answer y*
 
----
+```
+context ← q
+for i in [1..n]:
+    new ← M.generate(context)
+    context ← context + new
+return select_best(context, V)
+```
 
-## 🌍 Broader Impact
-
-This work shifts LLM research from *“bigger models always better”* to *“smarter use of compute.”*  
-
-- Enables small teams to match larger labs by optimizing inference instead of training costs.  
-- Promotes eco-efficient AI — less training energy, more adaptive inference.  
-- Inspires follow-ups like DeepSeek and O1 series which build search and verification directly into LLMs.  
+Works best when initial reasoning is close to correct.
 
 ---
 
-## 📚 Resource Links
+### Algorithm 5 — Compute-Optimal Strategy Selection
 
-1. [Scaling LLM Test-Time Compute Optimally Can Be More Effective than Scaling Model Parameters – Snell et al., DeepMind & UC Berkeley (2024)](https://arxiv.org/abs/2408.03314)  
-2. [Yannic Kilcher YouTube Review](https://www.youtube.com/watch?v=AfAmwIP2ntY&t=2573s)  
-3. [DeepMind Blog – Inference-Efficient LLMs (2024)](https://deepmind.google)  
-4. [AlphaZero Original Paper – Silver et al., Nature 2017]  
-5. [DeepSeek O1 Technical Report – Adaptive Inference Compute (2025)]
+Allocates the compute budget per question based on estimated difficulty.
+
+**Analogy:** Spend less time on easy tasks, more on hard ones.
+
+**Input:** difficulty predictor D, strategies S, budget B
+**Output:** strategy plan
+
+```
+for q in dataset:
+    d ← D.estimate(q)
+    if d < τ₁: use revisions
+    elif d < τ₂: mix revisions + search
+    else: use search
+return strategy_plan
+```
+
+Adaptive allocation yielded the headline **4× efficiency improvement**.
+
+**FIGURE PLACEHOLDER #4 – Difficulty vs strategy map**
 
 ---
 
-## 🧾 Citation
+## 🔬 5 | Methodology
 
-> Snell, C., Lee, J., Xu, K., & Kumar, A. (2024).  
-> *Scaling LLM Test-Time Compute Optimally Can Be More Effective than Scaling Model Parameters.*  
-> arXiv:2408.03314 [cs.LG].
+### Dataset
+
+All models were **fine-tuned on the MATH dataset**, spanning five difficulty levels — ideal for testing adaptive reasoning.
+
+### Base Model
+
+PaLM-2-S* (a mid-sized LLM) served as the foundation; smaller than state-of-the-art, enabling fair FLOPs comparison.
+
+### Evaluation Metric
+
+Pass@1 accuracy — the probability that the first generated answer is correct.
 
 ---
 
-*This README is structured in a teaching narrative style for academic presentation and discussion purposes.*
+## 💡 6 | Understanding FLOPs Simply
+
+**FLOPs (Floating-Point Operations)** measure compute effort.
+Think of them as *mental energy units*.
+
+| Compute Type          | Analogy                       | Description                    |
+| --------------------- | ----------------------------- | ------------------------------ |
+| **Pretraining FLOPs** | Hours spent studying          | Model learns general knowledge |
+| **Inference FLOPs**   | Time spent thinking on a test | Model reasons per question     |
+
+This paper proves that redistributing FLOPs — studying less but thinking longer — can match or exceed the performance of a 14× larger model.
+
+**FIGURE PLACEHOLDER #5 – FLOPs trade-off**
+
+---
+
+## 📊 7 | Experimental Findings
+
+### Adaptive vs Static Compute
+
+Adaptive compute achieves **4× higher efficiency** than fixed-budget best-of-N.
+
+### Difficulty-Aware Strategies
+
+* Easy → Sequential Revisions
+* Medium → Hybrid (Revisions + Search)
+* Hard → Parallel Search
+
+### Verifier Guidance
+
+Beam search shines on difficult questions but may over-optimize easy ones.
+
+### Revision Performance
+
+Revision models steadily improved with more steps — mimicking a student refining their answer.
+
+**FIGURE PLACEHOLDER #6 – Accuracy vs budget**
+**FIGURE PLACEHOLDER #7 – PRM over-optimization**
+
+---
+
+## 🔍 8 | Critical Analysis
+
+### **Strengths**
+
+* First formalization of compute-optimal inference.
+* Strong empirical results: 4× efficiency, 14× size parity.
+* Bridges previously separate methods (self-refine, search, verification).
+
+### **Limitations**
+
+* Experiments limited to math reasoning tasks.
+* Difficulty prediction overhead excluded from compute.
+* PRM bias can skew results when verifier over-rewards complex steps.
+
+### **Open Directions**
+
+* Apply to open-ended dialogue and multimodal tasks.
+* Integrate dynamic compute during generation.
+* Combine with reinforcement-learning-based reasoning agents.
+
+---
+
+## 🌍 9 | Impact
+
+### Academic
+
+Redefines scaling laws: performance ∝ *smarter compute allocation*, not just parameter count.
+Inspired follow-ups such as **OpenAI o1**, **DeepSeek R1**, and **difficulty-aware inference frameworks**.
+
+### Practical
+
+* Enables deployment of smaller models for real-time systems.
+* Reduces cloud costs per query.
+* Moves toward *human-like problem solving* — slow, careful thought for hard tasks, fast intuition for easy ones.
+
+**FIGURE PLACEHOLDER #8 – Influence timeline**
+
+---
+
+## 🔗 10 | Resources
+
+1. [arXiv Paper](https://arxiv.org/abs/2408.03314)
+2. [MATH Dataset Repo](https://github.com/hendrycks/math)
+3. [Yannic Kilcher Review](https://www.youtube.com/watch?v=AfAmwIP2ntY)
+4. [PRM800k (OpenAI, 2023)](https://github.com/openai/prm800k)
+5. [DeepSeek R1 Follow-up](https://arxiv.org/abs/2410.01523)
+
+---
+
+## 🧾 11 | Citation
+
+```bibtex
+@article{snell2024scaling,
+  title={Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters},
+  author={Snell, Charlie and Lee, Jaehoon and Xu, Kelvin and Kumar, Aviral},
+  journal={arXiv preprint arXiv:2408.03314},
+  year={2024}
+}
+```
+
+---
+
+## 🧩 12 | Key Takeaways
+
+1. **Inference-time compute is the new scaling frontier.**
+2. **4× efficiency gain** with adaptive compute allocation.
+3. **Difficulty-aware reasoning** = spend effort where it matters.
+4. **Small + smart beats large + lazy.**
+5. **Hybrid approaches** (revision + search + verification) are the future.
+
+---
+
