@@ -195,7 +195,7 @@ A PRM evaluates process-level correctness (step-by-step), not just final answers
 ---
 
 
-## 5 | 🧠 **Methodology: Scaling LLM Test-Time Compute**
+## 🧠 5 | **Methodology: Scaling LLM Test-Time Compute**
 
 The paper evaluates **how to allocate inference-time compute efficiently** to maximize reasoning accuracy per FLOP.
 It proceeds through **five ordered stages**, combining difficulty modeling, verifier-based search, and revision-based refinement.
@@ -340,7 +340,7 @@ Final Answer
 ---
 
 
-## 6 | 🧠 **Results: Scaling Test-Time Compute Efficiently**
+##  🧠 6 | **Results: Scaling Test-Time Compute Efficiently**
 
 ### **Core Finding**
 
