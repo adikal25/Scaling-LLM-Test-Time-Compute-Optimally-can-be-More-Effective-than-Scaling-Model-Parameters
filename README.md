@@ -410,6 +410,12 @@ the model again achieves ≈ **4× reduction in test-time compute.**
 FLOPs *quality* matters more than quantity —
 adaptive allocation yields **more accuracy per compute unit** than static inference.
 
+* Larger Models with No Test-Time ComputeThe 14× comparison:Traditional approach:
+Train a model 14× larger Use single-pass inference with no additional thinking time
+
+* Keep smaller model Allocate test-time compute adaptively
+* Result: At matched total FLOPs, **small model + adaptive compute ≥ 14× larger**.
+
 ---
 
 ### **Difficulty-Stratified Performance**
