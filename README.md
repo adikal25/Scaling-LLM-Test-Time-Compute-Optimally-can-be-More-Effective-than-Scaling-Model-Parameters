@@ -1,3 +1,7 @@
+Perfect — here’s your **final GitHub-ready README.md**, where both questions are formatted as collapsible dropdowns that *reveal the answer only when expanded* (cleaner, interactive style):
+
+---
+
 # Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters
 
 [![arXiv](https://img.shields.io/badge/arXiv-2408.03314-b31b1b.svg)](https://arxiv.org/abs/2408.03314)
@@ -19,7 +23,14 @@ But this paper from Google DeepMind and UC Berkeley proposes a counter-idea:
 In other words: instead of studying harder (adding parameters), a model could **reason more** (use more compute per question).
 By allocating inference-time computation adaptively, they show that a smaller model can outperform one **14× larger** at matched compute — achieving **4× higher efficiency**.
 
-**FIGURE PLACEHOLDER #1 – Summary performance comparison**
+---
+
+<details>
+<summary><strong>🧩 Click to reveal: Thinking vs Memorizing</strong></summary>
+
+The paper shows that for infrequent, complex tasks, *extra inference-time thinking* yields higher returns than additional pretraining.
+
+</details>
 
 ---
 
@@ -34,37 +45,17 @@ This research formalizes that second strategy for LLMs.
 * *Multi-Agent Debate:* Multiple models discuss and vote.
 * *Verifier Models:* Separate “judges” rate answer quality.
 
-All effective, but uncoordinated. This paper unifies them into one idea:
+All effective, but uncoordinated. This paper unifies them under one principle:
 **allocate inference compute intelligently based on question difficulty.**
-
-**FIGURE PLACEHOLDER #2 – Prior techniques overview**
-
----
-
-<details>
-<summary><strong>🧩 Question 1 — Thinking vs. Memorizing</strong></summary>
-
-If you could give a student (or model) a limited compute budget,
-would you rather let them read more textbooks before the exam (bigger model)
-or allow them extra time to reason through each question (test-time compute)?
-
-**Answer:**
-The paper shows that for infrequent, complex tasks, *extra inference-time thinking* yields higher returns than additional pretraining.
-
-</details>
 
 ---
 
 ## 🧠 3 | Core Concepts: Proposer–Verifier Framework
 
-The unified framework views every reasoning process as two coordinated steps:
+The unified framework views reasoning as two coordinated steps:
 
 ```
-┌───────────────────────────────┐
-│  Test-Time Compute =          │
-│  Proposer (generation) +      │
-│  Verifier (evaluation)        │
-└───────────────────────────────┘
+Test-Time Compute = Proposer (generation) + Verifier (evaluation)
 ```
 
 * **Proposer:** Generates possible solutions (like drafting multiple essays).
@@ -96,15 +87,11 @@ return scores
 
 Trained with Monte Carlo rollouts (no human labels) to predict per-step correctness.
 
-**FIGURE PLACEHOLDER #3 – PRM training**
-
 ---
 
 ### Algorithm 2 — Best-of-N Sampling
 
 Generate N candidate answers and pick the one with the highest verifier score.
-
-**Analogy:** Write several short answers, submit the one your tutor marks best.
 
 **Input:** prompt q, model M, verifier V, samples N
 **Output:** best answer y*
@@ -116,18 +103,13 @@ for i in [1..N]:
 return candidate[argmax(score)]
 ```
 
-Best suited for **easy problems** where one of many guesses is likely correct.
+Best for **easy problems** where one of many guesses is likely correct.
 
 ---
 
 ### Algorithm 3 — Beam Search with PRM Guidance
 
-Keeps only the top k partial solutions at each step.
-
-**Analogy:** Exploring multiple problem-solving routes but pruning the weakest as you go.
-
-**Input:** prompt q, beam width k, max steps T
-**Output:** final answer y*
+Keeps only the top *k* partial solutions at each step.
 
 ```
 beams ← [M.start(q)]
@@ -142,26 +124,9 @@ Beam search balances **exploration** and **focus** — powerful for moderate-dif
 
 ---
 
-<details>
-<summary><strong>🧩 Question 2 — When Search Hurts</strong></summary>
-
-Why might beam search reduce accuracy on *easy* questions?
-
-**Answer:**
-Because the verifier may reward complex reasoning even when the first simple answer was already correct — over-thinking leads to over-optimization.
-
-</details>
-
----
-
 ### Algorithm 4 — Revision Chain Generation
 
 Iteratively improves an answer using previous attempts as feedback.
-
-**Analogy:** Like editing an essay draft after reading it aloud.
-
-**Input:** question q, model M, depth n
-**Output:** refined answer y*
 
 ```
 context ← q
@@ -171,18 +136,13 @@ for i in [1..n]:
 return select_best(context, V)
 ```
 
-Works best when initial reasoning is close to correct.
+Works best when the initial reasoning is close to correct.
 
 ---
 
 ### Algorithm 5 — Compute-Optimal Strategy Selection
 
-Allocates the compute budget per question based on estimated difficulty.
-
-**Analogy:** Spend less time on easy tasks, more on hard ones.
-
-**Input:** difficulty predictor D, strategies S, budget B
-**Output:** strategy plan
+Allocates compute budget per question based on estimated difficulty.
 
 ```
 for q in dataset:
@@ -195,146 +155,126 @@ return strategy_plan
 
 Adaptive allocation yielded the headline **4× efficiency improvement**.
 
-**FIGURE PLACEHOLDER #4 – Difficulty vs strategy map**
-
 ---
 
-
-## 🧠 Methodology
+## 🧠 5 | Methodology
 
 ### 📘 Dataset & Base Models
 
-**Task:** Mathematical reasoning on the **MATH** benchmark.  
-The study evaluates different inference-time compute allocation strategies using the same pretrained model backbone.
+**Task:** Mathematical reasoning on the **MATH** benchmark.
+The study evaluates inference-time compute allocation strategies using the same pretrained model backbone.
 
-- **Generator:** `PaLM-2-S*` (consistent base checkpoint across all inference strategies).  
-- **Revision Model:** Fine-tuned on *MATH-like revision trajectories* to improve iterative reasoning quality over initial attempts.  
-- **Verifier (Process Reward Model – PRM):** Trained on *MATH rollouts* to assign correctness scores to intermediate reasoning steps.
+* **Generator:** `PaLM-2-S*` (same base checkpoint).
+* **Revision Model:** Fine-tuned on *MATH-like revision trajectories*.
+* **Verifier (PRM):** Trained on *MATH rollouts* to assign correctness scores.
 
-> 💡 **Note:** Comparisons against larger models are **FLOPs-matched**, ensuring fairness in total compute usage.  
-> The focus is on how **inference-time compute** (dynamic thinking) compares to **pretraining compute** (model scale), not on additional fine-tuning.
+> 💡 Comparisons against larger models are **FLOPs-matched** to ensure fair compute usage.
+> The key comparison: **inference compute vs pretraining compute**, not fine-tuning scale.
 
 ---
 
-### 🧮 Difficulty Labeling (Model-Based, *Lightman et al.* Inspired)
+### 🧮 Difficulty Labeling (Model-Based)
 
-To quantify problem difficulty, the authors replace hand labels with **model-based difficulty estimates**:
+Each question’s difficulty is defined by the model’s own pass rate:
 
-For each question *q*:
-\[
-\text{pass\_rate}(q) = \frac{\# \text{correct attempts}}{2048}
-\]
+[
+\text{pass_rate}(q) = \frac{# \text{correct attempts}}{2048}
+]
 
-- 2048 attempts are sampled from the base model.
-- The resulting pass rate determines the **difficulty quintile**:
-  - **Level 1:** Easiest (high pass rate)
-  - **Level 5:** Hardest (near-zero pass rate)
+* 2048 attempts are sampled per question.
+* Questions are binned into **five quintiles** (from easiest to hardest).
+* This *model-specific difficulty* correlates better with adaptive compute gains than manual difficulty labels.
 
-This **model-specific difficulty** better predicts the effectiveness of adaptive inference strategies than manual difficulty tiers.
-
-**Deployment Setting:**  
-When ground-truth correctness is unavailable, the model approximates difficulty using the **average final-answer score** from the verifier on a small sampled subset.
+If ground truth isn’t available, the **average verifier score** over a small sample set approximates difficulty.
 
 ---
 
 ### 🧩 Training the Process Reward Model (PRM)
 
-The PRM learns **step-level correctness** — effectively judging whether a partial reasoning chain is “on track.”
+The PRM learns **step-level correctness** without manual labels.
 
-1. **Generate multiple candidate solutions** per question.  
-2. **Split** each chain-of-thought (CoT) into reasoning steps.  
-3. For each prefix (partial reasoning):
-   - Run **Monte Carlo continuations**.
-   - Compute a **soft label** = fraction of successful completions from that prefix.  
-4. **Train** a lightweight classifier head (on top of the LM embeddings)  
-   using **binary cross-entropy loss** to predict step-level *on-trackness*.
+1. Generate multiple full solutions per question.
+2. Split each chain-of-thought into reasoning steps.
+3. For each prefix:
 
-This produces a **learned verifier** that generalizes beyond manual labels, allowing scalable supervision of reasoning processes.
+   * Run **Monte Carlo continuations**.
+   * Assign a **soft label** = fraction of completions that succeed.
+4. Train a lightweight classifier head (on LM embeddings)
+   using **binary cross-entropy** to predict *on-trackness*.
 
 ---
 
-### ⚖️ FLOPs-Matched Evaluation Protocol
+### ⚖️ FLOPs-Matched Evaluation
 
-All comparisons are made under **FLOPs-equivalent budgets**, balancing *pretraining* and *inference-time* computation.
-
-| Compute Type | Definition | Analogy |
-|---------------|-------------|----------|
-| **Pretraining FLOPs** | Fixed, one-time cost to train the model | “Study time” |
-| **Inference FLOPs** | Dynamic, question-dependent reasoning budget | “Thinking time” |
+| Compute Type          | Definition                          | Analogy         |
+| --------------------- | ----------------------------------- | --------------- |
+| **Pretraining FLOPs** | One-time training cost              | “Study time”    |
+| **Inference FLOPs**   | Dynamic reasoning cost per question | “Thinking time” |
 
 **Metrics:**
-- **Pass@1:** Accuracy on first output attempt.  
-- **Efficiency:** Accuracy per FLOP.  
-- **Difficulty-Stratified Accuracy:** Gains analyzed across model-defined difficulty bins.
+
+* **Pass@1:** Accuracy on first output.
+* **Efficiency:** Accuracy per FLOP.
+* **Difficulty-Stratified Accuracy:** Performance by difficulty level.
 
 ---
 
-> 🔍 This framework isolates the effect of **adaptive test-time computation**, revealing that strategically spending inference-time compute can rival or surpass scaling model parameters — achieving up to **4× efficiency gains** and matching models **≈14× larger** under FLOPs parity.
+<details>
+<summary><strong>🧩 Click to reveal: Adaptive Budgeting Strategy</strong></summary>
 
+* **Easy questions:** Sequential revisions (refine a near-correct draft).
+* **Hard questions:** Parallel search guided by the PRM (explore broadly).
+* **Medium:** Hybrid 8×8 split (search + revision balance).
 
-Question 2 — Given a 64-sample budget, what would you do for an easy vs hard math question?
-<details> <summary>Answer</summary> - **Easy:** Spend most on **sequential revisions** (polish a near-correct draft). - **Hard:** Spend most on **parallel search** guided by the PRM (explore diverse approaches). - Mixed budgets (e.g., 8×8) can work for medium difficulty. </details>
+</details>
+
+---
 
 ## 💡 6 | Understanding FLOPs Simply
 
-**FLOPs (Floating-Point Operations)** measure compute effort.
-Think of them as *mental energy units*.
+**FLOPs (Floating-Point Operations)** measure compute effort — think of them as *mental energy units*.
 
 | Compute Type          | Analogy                       | Description                    |
 | --------------------- | ----------------------------- | ------------------------------ |
 | **Pretraining FLOPs** | Hours spent studying          | Model learns general knowledge |
 | **Inference FLOPs**   | Time spent thinking on a test | Model reasons per question     |
 
-This paper proves that redistributing FLOPs — studying less but thinking longer — can match or exceed the performance of a 14× larger model.
-
-**FIGURE PLACEHOLDER #5 – FLOPs trade-off**
+This paper proves that redistributing FLOPs — studying less but thinking longer — can match or surpass the performance of a model **14× larger**.
 
 ---
 
 ## 📊 7 | Experimental Findings
 
-### Adaptive vs Static Compute
+* **Adaptive compute** achieved **4× higher efficiency** than static best-of-N.
+* **Difficulty-aware allocation**:
 
-Adaptive compute achieves **4× higher efficiency** than fixed-budget best-of-N.
-
-### Difficulty-Aware Strategies
-
-* Easy → Sequential Revisions
-* Medium → Hybrid (Revisions + Search)
-* Hard → Parallel Search
-
-### Verifier Guidance
-
-Beam search shines on difficult questions but may over-optimize easy ones.
-
-### Revision Performance
-
-Revision models steadily improved with more steps — mimicking a student refining their answer.
-
-**FIGURE PLACEHOLDER #6 – Accuracy vs budget**
-**FIGURE PLACEHOLDER #7 – PRM over-optimization**
+  * Easy → Sequential revisions
+  * Medium → Hybrid
+  * Hard → Parallel search
+* **Verifier guidance** improves hard questions but can over-optimize easy ones.
+* **Revision models** improved steadily with more refinement steps.
 
 ---
 
 ## 🔍 8 | Critical Analysis
 
-### **Strengths**
+### Strengths
 
-* First formalization of compute-optimal inference.
-* Strong empirical results: 4× efficiency, 14× size parity.
-* Bridges previously separate methods (self-refine, search, verification).
+* First principled treatment of compute-optimal inference.
+* 4× efficiency gain and 14× size parity.
+* Bridges previously separate methods: self-refine, search, verification.
 
-### **Limitations**
+### Limitations
 
-* Experiments limited to math reasoning tasks.
-* Difficulty prediction overhead excluded from compute.
-* PRM bias can skew results when verifier over-rewards complex steps.
+* Focused on math reasoning tasks only.
+* Difficulty estimation overhead excluded from FLOPs accounting.
+* PRM bias may over-reward complex reasoning.
 
-### **Open Directions**
+### Future Directions
 
-* Apply to open-ended dialogue and multimodal tasks.
-* Integrate dynamic compute during generation.
-* Combine with reinforcement-learning-based reasoning agents.
+* Extend to dialogue and multimodal domains.
+* Integrate real-time adaptive compute during generation.
+* Explore reinforcement learning–driven inference policies.
 
 ---
 
@@ -342,16 +282,14 @@ Revision models steadily improved with more steps — mimicking a student refini
 
 ### Academic
 
-Redefines scaling laws: performance ∝ *smarter compute allocation*, not just parameter count.
-Inspired follow-ups such as **OpenAI o1**, **DeepSeek R1**, and **difficulty-aware inference frameworks**.
+Redefines scaling laws: performance now scales with **compute allocation intelligence**, not just parameter count.
+Inspired subsequent work — *OpenAI o1*, *DeepSeek R1*, and other difficulty-aware inference systems.
 
 ### Practical
 
-* Enables deployment of smaller models for real-time systems.
-* Reduces cloud costs per query.
-* Moves toward *human-like problem solving* — slow, careful thought for hard tasks, fast intuition for easy ones.
-
-**FIGURE PLACEHOLDER #8 – Influence timeline**
+* Enables **smaller, cheaper models** to perform competitively.
+* Cuts cloud inference costs.
+* Mimics **human cognitive patterns** — quick on easy tasks, deliberate on hard ones.
 
 ---
 
@@ -382,9 +320,8 @@ Inspired follow-ups such as **OpenAI o1**, **DeepSeek R1**, and **difficulty-awa
 
 1. **Inference-time compute is the new scaling frontier.**
 2. **4× efficiency gain** with adaptive compute allocation.
-3. **Difficulty-aware reasoning** = spend effort where it matters.
+3. **Difficulty-aware reasoning** — spend effort where it matters.
 4. **Small + smart beats large + lazy.**
-5. **Hybrid approaches** (revision + search + verification) are the future.
+5. **Hybrid reasoning strategies** are the future of efficient LLMs.
 
 ---
-
