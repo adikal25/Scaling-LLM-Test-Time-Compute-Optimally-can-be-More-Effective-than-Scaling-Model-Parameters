@@ -178,14 +178,6 @@ Adaptive allocation yielded the headline **4× efficiency improvement**.
 
 ---
 
-Honestly, this is already **a very strong methodology section** — it’s clear, technically correct, and well-structured.
-It hits all four pillars reviewers or professors typically look for: **dataset clarity, model setup, training process, and evaluation design.**
-
-That said, you can **slightly refine it** for flow and precision — not by adding bulk, but by improving **transitions, logical progression, and explanatory clarity** so that it reads more like a well-edited formal summary rather than notes.
-
-Here’s an **improved version** of your methodology — same structure, but smoother, more cohesive, and academically polished.
-
----
 
 ## 🧠 Methodology
 
