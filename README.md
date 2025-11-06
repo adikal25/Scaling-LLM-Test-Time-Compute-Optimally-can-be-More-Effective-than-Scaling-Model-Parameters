@@ -199,21 +199,81 @@ Adaptive allocation yielded the headline **4× efficiency improvement**.
 
 ---
 
-## 🔬 5 | Methodology
 
-### Dataset
+## 🧠 Methodology
 
-All models were **fine-tuned on the MATH dataset**, spanning five difficulty levels — ideal for testing adaptive reasoning.
+### 📘 Dataset & Base Models
 
-### Base Model
+**Task:** Mathematical reasoning on the **MATH** benchmark.  
+The study evaluates different inference-time compute allocation strategies using the same pretrained model backbone.
 
-PaLM-2-S* (a mid-sized LLM) served as the foundation; smaller than state-of-the-art, enabling fair FLOPs comparison.
+- **Generator:** `PaLM-2-S*` (consistent base checkpoint across all inference strategies).  
+- **Revision Model:** Fine-tuned on *MATH-like revision trajectories* to improve iterative reasoning quality over initial attempts.  
+- **Verifier (Process Reward Model – PRM):** Trained on *MATH rollouts* to assign correctness scores to intermediate reasoning steps.
 
-### Evaluation Metric
-
-Pass@1 accuracy — the probability that the first generated answer is correct.
+> 💡 **Note:** Comparisons against larger models are **FLOPs-matched**, ensuring fairness in total compute usage.  
+> The focus is on how **inference-time compute** (dynamic thinking) compares to **pretraining compute** (model scale), not on additional fine-tuning.
 
 ---
+
+### 🧮 Difficulty Labeling (Model-Based, *Lightman et al.* Inspired)
+
+To quantify problem difficulty, the authors replace hand labels with **model-based difficulty estimates**:
+
+For each question *q*:
+\[
+\text{pass\_rate}(q) = \frac{\# \text{correct attempts}}{2048}
+\]
+
+- 2048 attempts are sampled from the base model.
+- The resulting pass rate determines the **difficulty quintile**:
+  - **Level 1:** Easiest (high pass rate)
+  - **Level 5:** Hardest (near-zero pass rate)
+
+This **model-specific difficulty** better predicts the effectiveness of adaptive inference strategies than manual difficulty tiers.
+
+**Deployment Setting:**  
+When ground-truth correctness is unavailable, the model approximates difficulty using the **average final-answer score** from the verifier on a small sampled subset.
+
+---
+
+### 🧩 Training the Process Reward Model (PRM)
+
+The PRM learns **step-level correctness** — effectively judging whether a partial reasoning chain is “on track.”
+
+1. **Generate multiple candidate solutions** per question.  
+2. **Split** each chain-of-thought (CoT) into reasoning steps.  
+3. For each prefix (partial reasoning):
+   - Run **Monte Carlo continuations**.
+   - Compute a **soft label** = fraction of successful completions from that prefix.  
+4. **Train** a lightweight classifier head (on top of the LM embeddings)  
+   using **binary cross-entropy loss** to predict step-level *on-trackness*.
+
+This produces a **learned verifier** that generalizes beyond manual labels, allowing scalable supervision of reasoning processes.
+
+---
+
+### ⚖️ FLOPs-Matched Evaluation Protocol
+
+All comparisons are made under **FLOPs-equivalent budgets**, balancing *pretraining* and *inference-time* computation.
+
+| Compute Type | Definition | Analogy |
+|---------------|-------------|----------|
+| **Pretraining FLOPs** | Fixed, one-time cost to train the model | “Study time” |
+| **Inference FLOPs** | Dynamic, question-dependent reasoning budget | “Thinking time” |
+
+**Metrics:**
+- **Pass@1:** Accuracy on first output attempt.  
+- **Efficiency:** Accuracy per FLOP.  
+- **Difficulty-Stratified Accuracy:** Gains analyzed across model-defined difficulty bins.
+
+---
+
+> 🔍 This framework isolates the effect of **adaptive test-time computation**, revealing that strategically spending inference-time compute can rival or surpass scaling model parameters — achieving up to **4× efficiency gains** and matching models **≈14× larger** under FLOPs parity.
+
+
+Question 2 — Given a 64-sample budget, what would you do for an easy vs hard math question?
+<details> <summary>Answer</summary> - **Easy:** Spend most on **sequential revisions** (polish a near-correct draft). - **Hard:** Spend most on **parallel search** guided by the PRM (explore diverse approaches). - Mixed budgets (e.g., 8×8) can work for medium difficulty. </details>
 
 ## 💡 6 | Understanding FLOPs Simply
 
