@@ -1,474 +1,308 @@
-# Scaling LLM Test-Time Compute Optimally
+# Scaling LLM Test-Time Compute Optimally Can Be More Effective Than Scaling Model Parameters
 
-**Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²
-**Affiliations:** ¹UC Berkeley, ²Google DeepMind
-**Published:** August 7, 2024
+**Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²  
+**Affiliations:** ¹UC Berkeley, ²Google DeepMind  
+**Presenter:** Adithya Kalidindi  
+**Date:** November 6, 2025  
 
------
+---
 
-## 📋 Table of Contents
+## Overview
 
-  * [Overview](https://www.google.com/search?q=%23-overview)
-  * [The Problem](https://www.google.com/search?q=%23-the-problem-conflicting-literature)
-  * [Core Question](https://www.google.com/search?q=%23-core-question)
-  * [Unified Framework](https://www.google.com/search?q=%23-unified-framework-proposer--verifier)
-  * [Architecture & Algorithms](https://www.google.com/search?q=%23-architecture--algorithms)
-  * [Results](https://www.google.com/search?q=%23-results)
-  * [Test-Time vs Pretraining](https://www.google.com/search?q=%23-test-time-vs-pretraining)
-  * [Critical Analysis](https://www.google.com/search?q=%23-critical-analysis)
-  * [Impact](https://www.google.com/search?q=%23-impact--significance)
-  * [Questions](https://www.google.com/search?q=%23-questions-for-understanding)
-  * [Resources](https://www.google.com/search?q=%23-resources)
-  * [Citation](https://www.google.com/search?q=%23-citation)
+This paper studies a practical alternative to “just train a bigger model.” It shows how allocating more compute at inference time—letting a model “think longer” on hard prompts—can deliver ≈4× efficiency gains over static baselines and, under FLOPs-matched comparisons, allow a smaller model with adaptive test-time strategies to match or exceed a ≈14× larger model on math reasoning tasks.
 
------
+**Key idea:** Treat test-time reasoning as a *Proposer–Verifier system.*  
+The **Proposer** generates candidate solutions (via parallel sampling, beam search, or revision chains).  
+The **Verifier** (a Process Reward Model, PRM) scores intermediate reasoning steps to guide selection and compute allocation.
 
-## 🎯 Overview
+---
 
-> **The Big Idea:** Instead of always training bigger models, can we use more compute at **test-time** to make smaller models perform just as well?This paper investigates how to optimally scale inference-time computation in Large Language Models (LLMs) to improve performance on challenging prompts. The key question: If an LLM can use a fixed amount of test-time compute, how much can it improve?
+### Quick Rationale (in plain terms)
 
-### What This Paper Shows
+- **Pretraining FLOPs** = study hours invested once, up front.  
+- **Inference FLOPs** = thinking time spent per question.
 
-  * ✅ **4× efficiency improvement** over naive baselines
-  * ✅ **Small model + smart inference** beats **14× larger model** (on appropriate problems)
-  * ✅ Strategy must **adapt to question difficulty** - no one-size-fits-all
+This work shows that smartly spending thinking time—especially on difficult questions—can be a better deal than paying for a permanently larger model.
 
-### Why It Matters
+#### Question 1 — Why not always scale parameters?
+<details>
+<summary>Answer</summary>
+Because parameter scaling raises training cost and latency for every use, regardless of difficulty.  
+Test-time compute lets you **spend more only when needed** — little compute for easy prompts, more for harder ones.  
+This targeted spending can be both **cheaper** and **more accurate** in many regimes.
+</details>
 
-  * **Before:** Better performance = Bigger model (expensive pretraining)
-  * **After:** Better performance = Smaller model + adaptive test-time compute (sometimes more efficient)
+---
 
------
+## Background & Prior Work
 
-## ❌ The Problem: Conflicting Literature
+**Self-Refine / Iterative Self-Critique:**  
+The model revises its own answers in multiple rounds.
 
-### Why This Research Was Needed
+**Multi-Agent Debate:**  
+Multiple instances argue and vote on the best reasoning chain.
 
-The literature showed contradictory results:
+**Best-of-N & Majority Voting:**  
+Generate many answers, then select the most likely or most consistent.
 
-| Method | Claim | Reality |
-| :--- | :--- | :--- |
-| **Self-Refine** | Models can improve by critiquing themselves | ✗ Doesn't work on hard reasoning |
-| **Multi-Agent Debate** | Multiple models debating helps | ✗ Just better prompting, not better than majority vote |
-| **Best-of-N + Verifier** | Sample many, select best with learned scorer | ✓ Actually works\! |
+**Verifier / Reward Models:**  
+Separate scoring models evaluate reasoning quality.
 
-### The Gap
+Empirically, simple strategies sometimes outperform complex ones, but results were scattered.  
+This paper provides a unified framework and a **difficulty-aware policy** for when to use which strategy and how much compute to spend.
 
-No systematic understanding of when/why methods work.
-→ This paper provides that systematic analysis.
+---
 
------
+## Core Concepts: Proposer–Verifier Framework
 
-## ❓ Core Question
+### Proposer (Generation): How candidates are produced
+- **Parallel:** Best-of-N sampling (many simultaneous reasoning paths)  
+- **Search:** Beam or lookahead guided by a PRM  
+- **Sequential:** Revision chains (iterative self-improvement)
 
-> Given a challenging query, how can we enable LLMs to most effectively use additional test-time computation to improve accuracy?
+### Verifier (Evaluation): How candidates are scored
+- The **Process Reward Model (PRM)** gives step-level correctness signals.  
+- Enables pruning weak reasoning branches and promoting coherent reasoning traces.
 
-### Many Possible Approaches
+**Intuition:**  
+For *easy problems*, initial candidates are “near-correct,” so small revisions suffice.  
+For *hard problems*, the model needs structured exploration guided by a PRM.
 
-  * **Test-Time Methods:**
-      * ├─ Best-of-N: Sample many, pick best
-      * ├─ Revisions: Iteratively improve answers
-      * ├─ Beam Search: Prune bad paths early
-      * ├─ Verifiers: Score with reward models
-      * └─ Combinations
+---
 
-### Key Insight
+## Methodology
 
-**Different problems need different strategies\!**
+### Dataset & Base Models
 
------
+- **Task:** Mathematical reasoning on the MATH benchmark.  
+- **Generator:** PaLM-2-S* (same base checkpoint across strategies).  
+- **Revision Model:** Fine-tuned on MATH-like revision trajectories to improve prior attempts.  
+- **Verifier (PRM):** Trained on MATH rollouts to score intermediate reasoning steps.
 
-## 🧠 Unified Framework: Proposer & Verifier
+**Note:**  
+Comparisons to larger models are **FLOPs-matched**; they are not newly fine-tuned on MATH unless stated.  
+The focus is on compute allocation (pretraining vs inference), not bespoke model training.
 
-### Two Independent Mechanisms
+---
 
-1.  **Proposer (Input Level)** - Modify *how* we generate answers
+### Difficulty Labeling (Model-Based, Lightman et al. Inspired)
 
-      * **Sequential Revisions:** Model learns from previous attempts
-      * **Better for EASY problems** (already on right track)
+Define a question’s difficulty by how often the base LLM can solve it.  
+For each question *q*, sample ≈2048 attempts and compute:
 
-2.  **Verifier (Output Level)** - Score and *select* answers
+\[
+\text{pass_rate}(q) = \frac{\# \text{correct attempts}}{2048}
+\]
 
-      * **Parallel Sampling + Scoring:** Generate many, pick best
-      * **Better for HARD problems** (need to explore approaches)
+Bin these into **five levels** (quintiles), from easiest (high pass rate) to hardest (near-zero pass rate).
 
-### Visual Example
+> This model-specific difficulty measure better predicts the benefit of test-time compute than human-assigned difficulty.
 
-> **Easy Problem:** "What is 15% of 80?"
-> → Use revisions (just fix arithmetic)
->
-> **Hard Problem:** "Prove infinitely many primes"
-> → Use parallel search (try different proof strategies)
+If ground truth is unavailable, use **model-predicted difficulty** — the *average verifier score* over a small sample set.
 
-*Caption: Two mechanisms for scaling test-time compute*
+---
 
------
+### Training the PRM (Process Reward Model)
 
-## 🏗️ Architecture & Algorithms
+**Goal:** Train a verifier to estimate *step-level correctness* without explicit labels.
 
-### Core Components
+1. Generate multiple chain-of-thought solutions per question.  
+2. Break each into steps.  
+3. For each prefix, simulate several rollouts.  
+4. Label each prefix with  
+   \[
+   y_t = \frac{\# \text{correct continuations}}{\text{rollouts}}
+   \]
+5. Train a lightweight classifier (on LM embeddings) using binary cross-entropy to predict *on-trackness*.
 
-  * **System Architecture:**
-      * Base Model (PaLM 2-S\*)
-          * ├─→ Revision Model (finetuned for self-correction)
-          * └─→ Process Reward Model (PRM, trained on MC rollouts)
-              * ↓
-      * Compute-Optimal Strategy Selector
+> The PRM thus learns to detect when reasoning is drifting off course, even mid-solution.
 
-### Algorithm 1: Process Reward Model Training
+---
 
-**Input:** Base model $M$, training questions $Q$, samples per question $n_s = 16$, rollouts per step $n_r = 16$
-**Output:** Trained PRM $V$
+### FLOPs-Matched Evaluation
 
-```pseudocode
-Initialize training dataset D <- ∅
-for each question q ∈ Q do
-    Generate solutions S <- {M(q) : i = 1, ..., n_s}
-    for each solution s ∈ S do
-        Parse into steps: s = [step_1, ..., step_k]
-        for i = 1 to k do
-            Prefix p <- [step_1, ..., step_i]
-            Initialize successes <- 0
-            for j = 1 to n_r do
-                Sample completion c ~ M(· | p)
-                if IsCorrect(c, q) then
-                    successes <- successes + 1
-            end for
-            Compute label: y_i <- successes / n_r
-            Add to dataset: D <- D ∪ {(q, p, step_i, y_i)}
-        end for
-    end for
-end for
+**FLOPs (Floating-Point Operations)** quantify compute usage.
 
-Train PRM V on D with loss:
-```
+- **Pretraining FLOPs:** Fixed “study time” cost — determines baseline capability.  
+- **Inference FLOPs:** Variable “thinking time” per question — determines adaptability.
 
-$$
-\mathcal{L} = -\sum_i [y_i \log \hat{r}_i + (1-y_i) \log(1-\hat{r}_i)]
-$$
+Under equal total FLOPs, the study found that adaptive inference strategies outperform brute-force scaling.  
+For instance, rather than training a 14× larger model, you can allocate extra reasoning time selectively and achieve similar accuracy.
 
-```pseudocode
-return V
-```
+#### Question 2 — Given a 64-sample budget, what should the model do for easy vs hard math questions?
+<details>
+<summary>Answer</summary>
+- **Easy:** Spend most compute on **sequential revisions** — polish an already good answer.  
+- **Hard:** Spend most compute on **parallel search** guided by the PRM — explore more reasoning paths.  
+- **Medium:** Mix both (e.g., 8 revisions × 8 search beams).
+</details>
 
-*Key Innovation: No human labels needed - uses Monte Carlo rollouts*
+---
 
-### Algorithm 2: Best-of-N Weighted Selection
+## Algorithms (Formal, Readable-Paper Style)
 
-**Input:** Samples $S = \{s_1, \ldots, s_N\}$, verifier $V$
-**Output:** Best answer $\hat{a}$
+**Notation:**  
+*q* = question, *M* = generator LM, *M_rev* = revision LM, *V* = verifier PRM, *N* = sample budget, *k* = beam width.
 
-```pseudocode
-Group samples by final answer: G <- GroupByAnswer(S)
-Initialize score map: scores <- {}
-for each (a, G) ∈ G do
-    scores[a] <- Σ_{s ∈ G} V(s)
-end for
-return â <- argmax_a scores[a]
-```
+---
 
-*Note: Marginalizes over all samples with same final answer*
+### Algorithm 1: Difficulty Labeling (Oracle & Predicted)
 
-### Algorithm 3: Beam Search with Process Reward Model
+**Input:** question *q*, model *M*, verifier *V*  
+**Output:** difficulty level *ℓ ∈ {1,…,5}*
 
-**Input:** Model $M$, PRM $V$, question $q$, budget $N$, beam width $M$, max steps $T_{\max}$
-**Output:** Best solution
+**Oracle (with ground truth):**
+1. Sample *S = {s₁,…,s₂₀₄₈} ← M(q)*.  
+2. Compute pass rate = (#correct) / 2048.  
+3. Bin pass rates into quintiles → ℓ.
 
-```pseudocode
-Initialize beams: B <- {M_step(q) : i = 1, ..., N}
-for t = 1 to T_max do
-    if AllComplete(B) then break
-    
-    Score each beam: ∀b ∈ B: r_b <- V(b)
-    Select top beams: B_top <- TopK(B, {r_b}, k = N/M)
-    
-    Expand beams: B' <- ∅
-    for each b ∈ B_top do
-        Sample extensions: E <- {M_continue(b) : i = 1, ..., M}
-        B' <- B' ∪ E
-    end for
-    Update: B <- B'
-end for
-return BestOfNWeighted(B, V)
-```
+**Predicted (no ground truth):**
+1. Sample smaller *S*.  
+2. Compute average verifier score:  
+   \[
+   \bar{r}(q) = \frac{1}{|S|} \sum_i V(s_i)
+   \]
+3. Bin into quintiles → ℓ.
 
-*Complexity: $O(N \cdot T_{\max})$ generations, $O(N)$ space*
+---
 
-*Caption: Three search methods compared*
+### Algorithm 2: PRM Training
 
-### Algorithm 4: Revision Model Training
+**Input:** dataset *Q*, model *M*, samples per question *nₛ*, rollouts per prefix *nᵣ*  
+**Output:** trained verifier *V*
 
-**Input:** Base model $M$, questions $Q$, samples per question $n_s = 64$
-**Output:** Trained revision model $M_{rev}$
+For each *q ∈ Q*:  
+a. Sample *S = {s₁,…,sₙₛ}* from *M(q)*.  
+b. Parse each *s* into steps *(step₁,…,step_T)*.  
+c. For each prefix *p_t = (step₁,…,step_t)*:
+   - Roll out *nᵣ* continuations.  
+   - Label *y_t = (#correct continuations)/nᵣ*.  
+   - Add *(q, p_t, step_t, y_t)* to training data.  
+d. Train *V* to predict *y_t* from *(q, p_t, step_t)* using binary cross-entropy.
 
-```pseudocode
-Initialize trajectory set T <- ∅
-for each q ∈ Q do
-    Sample solutions: S <- {M(q) : i = 1, ..., n_s}
-    Partition: 
-        S_correct <- {s ∈ S : IsCorrect(s, q)}
-        S_incorrect <- S \ S_correct
-    
-    for each s_c ∈ S_correct do
-        Sample length: k ~ Uniform({0, 1, 2, 3, 4})
-        if k = 0 then
-            Trajectory: τ <- [s_c]
-        else
-            Find similar incorrect: s_last <- argmin_{s ∈ S_incorrect} d_edit(s, s_c)
-            Sample others: S_other ~ RandomSample(S_incorrect \ {s_last}, k-1)
-            Construct: τ <- [S_other, s_last, s_c]
-        end if
-        T <- T ∪ {(q, τ)}
-    end for
-end for
-Finetune M on T using supervised learning
-return M_rev
-```
+---
 
-*Key Design: Edit distance ensures correlated incorrect→correct transitions*
+### Algorithm 3: Best-of-N (Verifier-Weighted)
 
-### Algorithm 5: Revision Chain Generation
+**Input:** question *q*, model *M*, verifier *V*, budget *N*  
+**Output:** selected answer *â*
 
-**Input:** Revision model $M_{rev}$, question $q$, revisions $n$, context size $k=4$
-**Output:** Answer chain $A$
+1. Generate *N* samples *S = {s₁,…,s_N} ← M(q)*.  
+2. Group by final answer *a*.  
+3. For each *a*, compute  
+   \[
+   \text{score}(a) = \sum_{s \in S, \text{final}(s)=a} V(s)
+   \]  
+4. Return *â = argmaxₐ score(a)*.
 
-```pseudocode
-Initialize A <- []
-for i = 1 to n do
-    Build context: ctx <- [q, A_{max(0, i-k):i-1}]
-    Generate: a_i ~ M_rev(· | ctx)
-    Append: A <- A ∪ {a_i}
-end for
-return A
-```
+---
 
-*Note: Trained on $\leq 4$ revisions, generalizes to $n > 4$*
+### Algorithm 4: Beam Search with PRM
+
+**Input:** *q, M, V, N, k, T*  
+**Output:** best answer *â*
+
+1. Initialize beams (N one-step prefixes).  
+2. For each step *t = 1…T*:  
+   - Score each beam with *V*.  
+   - Keep top *N/k* beams.  
+   - Expand each with *k* continuations.  
+3. Run Best-of-N (Algorithm 3) over final beams.
+
+---
+
+### Algorithm 5: Revision Chain (Sequential Refinement)
+
+**Input:** *q, M_rev, V, depth d*  
+**Output:** best answer *â*
+
+1. Initialize context *C ← [q]*.  
+2. For *i = 1…d*:  
+   - Generate revision *r_i ← M_rev(C)*.  
+   - Append to *C ← C ⊕ r_i*.  
+3. Return *â = argmax_{r_i∈C} V(r_i)*.
+
+---
 
 ### Algorithm 6: Compute-Optimal Strategy Selection
 
-**Input:** Question $q$, models ($M, M_{rev}$), PRM $V$, budget $N$
-**Output:** Best answer $\hat{a}$
+**Input:** difficulty level *ℓ*, compute budget *N*, strategies *S*  
+**Output:** policy *π(ℓ;N)*
 
-```pseudocode
-// Step 1: Estimate Difficulty
-Sample probe set: P <- {M(q) : i = 1, ..., 16}
-Compute average score: r_bar <- (1/|P|) * Σ_{s ∈ P} V(s)
-Map to difficulty:
-d <- EASY        if r_bar > 0.6
-     MEDIUM      if 0.35 < r_bar <= 0.6
-     HARD        if 0.15 < r_bar <= 0.35
-     VERY_HARD   otherwise
+1. For each *ℓ, N*, evaluate strategies:
+   - Pure revisions (*d = N*)  
+   - Mixed (*N = n_seq × n_par*)  
+   - Pure search (beam + PRM)
+2. Select  
+   \[
+   \pi(ℓ;N) = \arg\max_{s∈S} \text{Accuracy}(s | ℓ, N)
+   \]
+3. Apply *π* to test questions of the same *ℓ*.
 
-// Step 2: Select Strategy
-if method = "revisions" then
-    if d = EASY then (n_seq, n_par) <- (N, 1)
-    else if d = MEDIUM then (n_seq, n_par) <- (N/4, 4)
-    else if d = HARD then (n_seq, n_par) <- (N/16, 16)
-    else (n_seq, n_par) <- (1, N)
-    end if
-    Execute: â <- SolveWithRevisions(q, M_rev, V, n_seq, n_par)
+---
 
-else // method = "search"
-    if N < 32 and d ∈ {MEDIUM, HARD} then
-        â <- BeamSearch(M, V, q, N, M=4)
-    else if d = EASY then
-        â <- BestOfN(M, V, q, N) // Avoid over-optimization
-    else
-        â <- BeamSearch(M, V, q, N, M=4)
-    end if
-end if
-return â
-```
+## Results (Difficulty-Aware Insights)
 
-*Key Principle: Adapt strategy to estimated difficulty for optimal efficiency*
+**Efficiency Gains:**  
+Compute-optimal policy achieves target accuracy with **~¼ the samples** versus static Best-of-N.
 
-### Algorithm 7: Hierarchical Answer Selection
+**Difficulty-Aware Wins:**
+- **Easy:** Revisions dominate — polish near-correct drafts.  
+- **Medium:** Mixed search + revision.  
+- **Hard:** PRM-guided beam search yields biggest jumps.
 
-**Input:** Revision chains $C = \{C_1, \ldots, C_m\}$ where $C_j = [a_1^j, \ldots, a_n^j]$, verifier $V$
-**Output:** Best answer $\hat{a}$
+**Beam Search Over-Optimization:**  
+For easy questions, large budgets can hurt — PRM may overfit shallow cues.
 
-```pseudocode
-// Phase 1: Within-chain selection
-Initialize B <- []
-for j = 1 to m do
-    Score chain: ∀i: r_i^j <- V(a_i^j)
-    Select best: b_j <- BestOfNWeighted(C_j, {r_i^j})
-    B <- B ∪ {b_j}
-end for
+**FLOPs-Matched Tradeoff:**  
+For low inference frequency, test-time compute wins.  
+For heavy inference (e.g., production chatbots), parameter scaling may still help.
 
-// Phase 2: Cross-chain selection
-Score finalists: ∀j: r_j <- V(b_j)
-return â <- BestOfNWeighted(B, {r_j})
-```
+---
 
-### Theoretical Framework
+## Critical Analysis
 
-**Compute-Optimal Objective:**
-Given test-time compute hyperparameters $\theta$, budget $N$, and question $q$, find:
+### Strengths
+- Unified **Proposer–Verifier** framework with difficulty-aware policy.  
+- Step-level supervision via Monte Carlo rollouts—no manual labels.  
+- Clear FLOPs-matched methodology; 4× efficiency gains.
 
-$$
-\theta^*(q, N) = \arg\max_\theta \mathbb{E}_{y \sim \text{Target}(\theta, N, q)} [\mathbb{1}_{y = y^*(q)}]
-$$where $y^*(q)$ is the ground truth answer.
+### Limitations
+- Domain focus on math reasoning; transferability to code or dialogue open.  
+- 2048-sample difficulty labeling is computationally expensive.  
+- PRM bias can amplify over-optimization in repetitive reasoning.
 
-**Approximation:** Use question difficulty $d(q)$ as sufficient statistic:
+### Directions
+- Develop cheaper difficulty predictors.  
+- Explore reinforcement learning for adaptive compute.  
+- Study PRM calibration and robustness on diverse domains.
 
-$$\\theta^*(q, N) \\approx \\theta^*(d(q), N)
-$$Estimate $\theta^*(d,N)$ on validation set, apply to test questions with same difficulty.
+---
 
------
+## Impact
 
-## 📊 Results
+**Research:** Reframes scaling from “bigger models” to “smarter inference.”  
+**Practice:** Enables smaller models that dynamically allocate compute by difficulty.  
+**Ecosystem:** Inspires recent “reasoning-optimized” systems (e.g., o1/R1 reasoning agents).
 
-### The Compute-Optimal Strategy
+---
 
-**Strategy:** Pick best method based on difficulty
+## Resources
 
-  * **Easy:** Pure revisions (128:1) - *Just needs polish*
-  * **Medium:** Mixed (16:8) - *Some refinement, some exploration*
-  * **Hard:** Pure parallel (4:32) - *Must find right approach*
+- [Paper — Scaling LLM Test-Time Compute Optimally... (arXiv:2408.03314)](https://arxiv.org/abs/2408.03314)  
+- [MATH Dataset (Hendrycks et al.)](https://github.com/hendrycks/math)  
+- [PRM800k Dataset](https://huggingface.co/datasets/openai/prm800k)  
+- [Yannic Kilcher Review](https://www.youtube.com/watch?v=xxxx)  
+- [Follow-Ups: Difficulty-Adaptive Inference (o1/R1 Systems)](https://arxiv.org/abs/xxxx)
 
-*Caption: Optimal strategy varies by question difficulty*
+---
 
-### Performance: 4× Efficiency Gains
-
-Both methods achieve **4× less compute** for same performance:
-
-  * **Revisions:** Compute-optimal @ 64 samples = Parallel baseline @ 256 samples
-  * **Search:** Compute-optimal @ 16 samples ≈ Best-of-N @ 64 samples
-
-*Caption: 4× efficiency gains from compute-optimal allocation*
-
-### The Over-Optimization Problem
-
-On **easy** problems, beam search **degrades** at high budgets:
-
-  * **Budget: 4 → 256 samples**
-      * **Best-of-N:** 15% → 35% ✓ (steady)
-      * **Beam Search:** 18% → 33% ✗ (peaks then drops)
-
-**Why?** Verifier is mostly right on easy problems. Beam search exploits edge cases.
-
-*Caption: Beam search over-optimizes on easy problems at high budgets*
-
------
-
-## 🔄 Test-Time vs Pretraining
-
-### The R Ratio
-
-$$
-R = \text{inference\_tokens} / \text{pretraining\_tokens}
-$$  * **$R \ll 1$:** Self-improvement → **Test-time wins** on easy/medium
-* **$R \gg 1$:** Production → **Pretraining wins** (latency)
-
-### Results Summary
-
-| R Value | Easy | Medium | Hard |
-| :--- | :--- | :--- | :--- |
-| **$R \ll 1$** | **Test-time +22%** | **Test-time +12%** | Pretraining -24% |
-| **$R \gg 1$** | Test-time +4% | Pretraining -12% | Pretraining -36% |
-
-**Key:** Test-time works for problems *within* model capability, but can't overcome fundamental limitations.
-
-*Caption: When test-time compute outperforms scaling model parameters*
-
------
-
-## 🔍 Critical Analysis
-
-### Major Limitations
-
-1.  **Difficulty Estimation Cost:** Requires 2048 samples (\~8× overhead). Not counted in efficiency claims. Real gains may be lower.
-2.  **Single Model, Single Domain:** Only PaLM 2-S\* and MATH. May not generalize. Math has unique properties.
-3.  **Verifier Dependency:** All gains require good verifier. Over-optimization shows biases. No fallback when verifier poor.
-4.  **Distribution Shift:** Trained on [wrong→correct]. Generates [wrong→correct→wrong] 38% of time. Fundamental mismatch.
-
-### Follow-Up Work
-
-* **o1 (OpenAI, Sept 2024):** Shows much larger gains with RL-trained CoT. Suggests paper's methods aren't optimal.
-* **DeepSeek R1 (Jan 2025):** Open replication validates RL approach.
-
-**Consensus:** Analysis correct, but RL-trained reasoning (o1/R1) significantly better.
-
------
-
-## 🌍 Impact & Significance
-
-### How This Changed AI
-
-1.  **Legitimized Test-Time Compute Research:** Systematic framework replacing scattered results. Cited by o1 as foundational.
-2.  **Paradigm Shift:**
-* **Old:** Performance = Bigger Model
-* **New:** Performance = Smaller Model + Smart Inference
-3.  **Inspired o1 and R1:**
-* This paper: Shows test-time works (Aug 2024)
-* o1: Trains models to use it natively (Sept 2024)
-* R1: Open replication (Jan 2025)
-4.  **Economic Impact:** Enables tiered pricing. Smaller orgs can compete. More sustainable AI.
-
-*Caption: Rapid progression from analysis to practical implementation*
-
------
-
-## ❓ Questions for Understanding
-
-### Question 1: Strategy Selection
-
-> **For the audience:**
-> "Two problems with 64 samples:
-> A) Calculate 15% of 80
-> B) Prove infinitely many primes
->
-> Which strategy for each?
->
->   * Pure parallel (64 independent)?
->   * Pure sequential (64 revisions)?
->   * Mixed (8×8)?"
-
-**Answers:**
-
-* **A (easy):** Pure sequential - just arithmetic check
-* **B (hard):** Pure parallel - explore proof strategies
-
-**Key Insight:** Match strategy to difficulty\!
-
-### Question 2: Deployment Decision
-
-> **For the audience:**
-> "Coding assistant (10M queries/day), $10M budget:
-> A: Train 70B model (10×) - $36.5M/year
-> B: Keep 7B + test-time (16x) - $58.4M/year
->
-> Which is better?"
-
-**Answer:** Hybrid\!
-
-* Easy (80%) → small + test-time: $0.08/query
-* Hard (20%) → large model: $0.20/query
-* **Total:** \~$45M/year, best accuracy
-
-**Key Insight:** Route by difficulty\!
-
------
-
-## 📚 Resources
-
-* **Paper:** `arXiv:2408.03314`
-* **MATH Dataset:** GitHub
-* **Yannic Kilcher Review:** YouTube
-* **o1 System Card:** OpenAI
-* **DeepSeek R1:** GitHub
-
------
-
-## 📖 Citation
+## Citation
 
 ```bibtex
 @article{snell2024scaling,
-title={Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters},
-author={Snell, Charlie and Lee, Jaehoon and Xu, Kelvin and Kumar, Aviral},
-journal={arXiv preprint arXiv:2408.03314},
-year={2024}
+  title={Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters},
+  author={Snell, Charlie and Lee, Jaehoon and Xu, Kelvin and Kumar, Aviral},
+  journal={arXiv preprint arXiv:2408.03314},
+  year={2024}
 }
-```
-$$
