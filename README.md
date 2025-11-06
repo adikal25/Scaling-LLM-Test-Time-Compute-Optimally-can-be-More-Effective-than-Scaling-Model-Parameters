@@ -179,6 +179,21 @@ Adaptive allocation yielded the headline **4× efficiency improvement**.
 
 ---
 
+---
+
+### 🧩 Question 2 
+
+Why PRM instead of best of N?
+
+<details>
+<summary><strong>Answer</strong></summary>
+
+A PRM evaluates process-level correctness (step-by-step), not just final answers. Majority vote can reinforce confident but flawed reasoning, whereas a PRM awards higher scores to trajectories that remain logically consistent, enabling better early pruning, beam guidance, and compute allocation on hard questions
+
+</details>
+
+---
+
 
 ## 5 | 🧠 **Methodology: Scaling LLM Test-Time Compute**
 
