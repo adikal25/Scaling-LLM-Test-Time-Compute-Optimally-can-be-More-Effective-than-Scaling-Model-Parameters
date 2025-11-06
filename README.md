@@ -1,283 +1,281 @@
+# Scaling LLM Test-Time Compute Optimally Can Be More Effective Than Scaling Model Parameters
 
-# Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters
-
-[![arXiv](https://img.shields.io/badge/arXiv-2408.03314-b31b1b.svg)](https://arxiv.org/abs/2408.03314)
-
-**Authors:** Charlie Snell¹ · Jaehoon Lee² · Kelvin Xu² · Aviral Kumar²
-Affiliations: ¹ UC Berkeley · ² Google DeepMind
-**Presenter:** Adithya Kalidindi
-**Date:** November 6 2025
+**Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²
+**Affiliations:** ¹UC Berkeley, ²Google DeepMind
+**Paper:** [arXiv:2408.03314](https://arxiv.org/abs/2408.03314)
+**Presented by:** Adithya Kalidindi
+**Date:** November 6, 2025
 
 ---
 
-## Navigation
+## Overview: Rethinking “Bigger = Better”
 
-* [Introduction](#introduction)
-* [Key Highlights](#key-highlights)
-* [Conceptual Overview](#conceptual-overview)
-* [Architecture & Algorithms](#architecture--algorithms)
-* [Experiments & Findings](#experiments--findings)
-* [Critical Analysis](#critical-analysis)
-* [Impact & Future Work](#impact--future-work)
-* [Audience Questions](#audience-questions)
-* [Resources & Citation](#resources--citation)
+**The Context**
+Large Language Models (LLMs) keep getting bigger—billions of parameters, massive compute bills. But what if we could make a *smaller* model smarter simply by giving it **more time to think**?
 
----
+Imagine two students taking the same exam:
 
-## Introduction
+* Student A studies more (bigger model = more parameters)
+* Student B thinks longer per question (test-time compute = more inference steps)
 
-Traditional scaling of Large Language Models (LLMs) depends on **adding parameters** — increasing memory, latency, and cost.
-This paper challenges that assumption by asking:
+This paper asks: **Can extra thinking time compensate for a smaller brain?**
 
-> 🧠 *Can smaller models, if given more time and smarter reasoning at test-time, match or outperform much larger ones?*
-
-Instead of investing compute in pre-training, the authors propose investing it **during inference** — selectively spending extra FLOPs only when needed.
-
-Inspired by **AlphaZero**, which plays better chess by *thinking longer*, this work builds a framework that dynamically adjusts **how much computation each question deserves**.
-
-The result:
-✅ Up to 4× compute efficiency gains,
-✅ Smaller models perform on par with models ≈ 14× larger,
-✅ Shift from “bigger is better” → “smarter is better.”
+[Figure: Conceptual illustration — model size vs. inference compute]
 
 ---
 
-## Key Highlights
+## Question 1: Where Does the Compute Really Go?
 
-| Focus Area              | Core Idea                                                                           | Analogy                                        |
-| ----------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **Adaptive Compute**    | Dynamically allocate reasoning effort based on question difficulty                  | Like spending more time on hard exam questions |
-| **Two-Agent Framework** | Separate roles: *Proposer* (generate) + *Verifier* (score)                          | Writer + Editor team                           |
-| **Efficiency Gain**     | Up to 4× fewer model calls for same accuracy                                        | Thinking smarter instead of thinking longer    |
-| **Compute Trade-off**   | For few inferences → smarter thinking wins; for many inferences → bigger models win | Paying per trip vs buying a faster car         |
+**Prompt for audience**
+When an LLM answers a question, where is most of the compute spent — training or inference?
 
----
+<details>
+<summary>Click to reveal answer</summary>
 
-## Conceptual Overview
+Training usually dominates total compute — but inference (the model “thinking” at test-time) can also be scaled. The paper explores how **smarter use of inference compute** can sometimes outperform adding parameters.
 
-### 🧩 Proposer–Verifier Framework
-
-* **Proposer:** Generates, revises, or searches for candidate answers.
-* **Verifier (PRM):** Scores the reasoning chain and selects the best solution.
-
-**Analogy:**
-Imagine a student (Proposer) writing multiple answers and a teacher (Verifier) grading each step to pick the most logical one.
-This collaboration is cheaper and often better than training a new expert student from scratch.
+</details>
 
 ---
 
-## Architecture & Algorithms
+## Motivation: From AlphaGo to LLMs
 
-### 🧠 System Overview
+This idea isn’t new — game AI like **AlphaGo** improved not by bigger neural nets, but by **more search at inference** (look-ahead simulation).
+The authors extend that principle to language reasoning: giving models extra *thinking depth* per prompt instead of making them physically larger.
+
+**Key question:**
+
+> For a fixed compute budget, is it better to train a bigger model or let a smaller one think longer at inference?
+
+---
+
+## Prior Work in Test-Time Compute
+
+| Method                     | Idea                                        | Limitation                              |
+| -------------------------- | ------------------------------------------- | --------------------------------------- |
+| **Self-Refine**            | Model critiques and rewrites its own answer | Works locally, lacks global exploration |
+| **Debate Models**          | Multiple agents argue, pick best answer     | Hard to coordinate                      |
+| **Best-of-N Sampling**     | Generate N answers, choose highest-scoring  | Wasteful if N fixed                     |
+| **Verifier/Reward Models** | Separate model judges correctness           | Needs reliable verifier                 |
+
+None unified these strategies or optimized how to *allocate* test-time compute efficiently.
+
+---
+
+## The Core Idea: Adaptive Compute Allocation
+
+The authors propose a **unified framework** that splits test-time compute into two sides:
 
 ```
-Inference Compute = Proposer (Generation) + Verifier (Evaluation)
+Proposer  → generates candidate reasoning paths
+Verifier  → scores and selects the best reasoning path
 ```
 
-Together they form a compute-optimal decision system that allocates effort where it matters.
+[Figure: Proposer–Verifier framework diagram]
+
+The trick: **allocate more compute only when needed**, based on how hard the question seems.
+
+* Easy problems → few, quick revisions
+* Hard problems → deeper search with verifier guidance
+
+In other words, the model decides how long to “think” per question.
 
 ---
 
-### Algorithm 1 – Process Reward Model (PRM) Training
+## Simplified Analogy
 
-```pseudocode
-for q in training_questions:
-    samples ← model.generate(q, 64)
-    for prefix in samples:
-        success_rate ← average(is_correct(model.rollout(prefix)))
-        dataset.append((prefix, success_rate))
-train(PRM, dataset, loss="binary_cross_entropy")
+Think of an exam with 60 minutes:
+
+* Spend **30 seconds** on easy questions (greedy output)
+* Spend **5 minutes** on harder ones (multi-step reasoning)
+
+The system learns this adaptive strategy automatically.
+
+---
+
+## Architecture Overview: How It Works
+
+The framework builds on **PaLM-2-S***, fine-tuned on the **MATH dataset** for reasoning tasks.
+
+### Components
+
+1. **Proposer (Revision Model)** – sequentially refines answers
+2. **Verifier (Process Reward Model, PRM)** – scores partial reasoning steps
+3. **Strategy Selector** – decides how much compute to allocate based on difficulty
+
+---
+
+## Formal Algorithms (Simplified Pseudocode)
+
+### Algorithm 1 – Sequential Revision
+
+```python
+for step in range(k_revisions):
+    answer = model.generate(context)
+    score = verifier.evaluate(answer)
+    context += refine(answer, score)
+return select_best(context, by="score")
 ```
 
-🔍 The PRM learns to evaluate each reasoning step’s promise of leading to a correct final answer — like a teacher grading drafts midway.
+**Intuition:** Model revises its own answer step-by-step — like a student checking their math.
 
 ---
 
-### Algorithm 2 – Best-of-N Selection
+### Algorithm 2 – Verifier-Guided Search
 
-```pseudocode
-def best_of_n(model, verifier, prompt, N):
-    answers = model.generate(prompt, N)
-    grouped = group_by_answer(answers)
-    scores = {a: sum(verifier.score(x) for x in g)
-              for a, g in grouped.items()}
-    return max(scores, key=scores.get)
+```python
+candidates = [model.generate(prompt) for _ in range(N)]
+scores = [prm.score(c) for c in candidates]
+best = top_k(candidates, scores, k=beam_width)
+repeat until budget exhausted
+return best_answer(best, scores)
 ```
 
-💡 Ask N friends for solutions, let a grader pick the best. Efficient for easy tasks.
+**Intuition:** Parallel exploration — multiple reasoning paths compete, the verifier picks the champion.
 
 ---
 
-### Algorithm 3 – Beam Search with PRM
+### Algorithm 3 – Compute-Optimal Selection
 
-```pseudocode
-def beam_search(model, prm, prompt, N, beam_width):
-    beams = model.sample(prompt, N)
-    while not done(beams):
-        scores = [prm.score_step(b) for b in beams]
-        top = select_top_k(beams, scores, N//beam_width)
-        beams = [child for t in top for child in model.continue_from(t, beam_width)]
-    return best_of_n(beams, prm)
+```python
+def adaptive_strategy(question, budget):
+    difficulty = estimate_difficulty(question)
+    if difficulty < 0.3: return "revision"
+    elif difficulty < 0.6: return "hybrid"
+    else: return "search"
 ```
 
-🧩 Explore multiple paths at once, keep only promising ones — like a chess player discarding bad moves early.
+**Intuition:** The harder the question, the more compute is spent exploring alternatives.
 
 ---
 
-### Algorithm 4 – Lookahead Search (k-Step Rollout)
+## Experimental Setup
 
-```pseudocode
-def lookahead(model, prm, prompt, N, M, k):
-    beams = model.sample(prompt, N)
-    for step in range(max_steps):
-        scores = []
-        for b in beams:
-            future = model.rollout(b, k)
-            scores.append(prm.score_step(future[-1]))
-        top = select_top_k(beams, scores, N//M)
-        beams = [child for t in top for child in model.continue_from(t, M)]
-    return best_of_n(beams, prm)
-```
+* **Dataset:** MATH benchmark (12 k train / 500 test)
+* **Base model:** PaLM-2-S*, fine-tuned for math reasoning
+* **Evaluation:** Accuracy (pass@1), FLOPs-matched comparisons
+* **Metrics:** Generation budget = # of model calls × tokens per call
 
-🔭 Think ahead k steps like planning future moves. Effective but compute-heavy.
+[Figure: Example difficulty bins and adaptive strategies]
 
 ---
 
-### Algorithm 5 – Revision Model Training
+## Results and Analysis
 
-```pseudocode
-for q in training_data:
-    attempts = model.generate(q, 64)
-    correct, wrong = split_by_accuracy(attempts)
-    if correct:
-        target = random.choice(correct)
-        near_errors = find_similar(wrong, target, k=3)
-        train_seq = near_errors + [target]
-        train(revision_model, q, train_seq)
-```
+### 1️⃣ Compute-Optimal vs. Static Strategies
 
-✏️ Trains the model to self-correct by learning from near-misses — like reviewing mistakes to improve reasoning.
+Adaptive allocation achieved **≈ 4× efficiency gains** over fixed best-of-N sampling.
+At equal accuracy, compute-optimal used **¼ the inference FLOPs**.
+
+| Generation Budget | Best-of-N Accuracy | Adaptive Accuracy | Efficiency Gain |
+| ----------------- | -----------------: | ----------------: | --------------: |
+| 16                |               28.2 |              31.8 |          +12.8% |
+| 64                |               35.8 |              40.5 |          +13.1% |
 
 ---
 
-### Algorithm 6 – Compute-Optimal Controller
+### 2️⃣ Difficulty-Aware Behavior
 
-```pseudocode
-score = mean(PRM(model(q)) for _ in range(probes))
-if score > 0.6: strategy = "Sequential"
-elif score > 0.35: strategy = "Hybrid"
-elif score > 0.15: strategy = "Parallel"
-else: strategy = "Beam"
-return execute(strategy)
-```
+| Difficulty Level | Strategy Chosen       | Accuracy |
+| ---------------- | --------------------- | -------- |
+| Easy             | Sequential Revisions  | 78 %     |
+| Medium           | Hybrid Search         | 52 %     |
+| Hard             | Parallel Search (PRM) | 24 %     |
 
-🕹️ Controller chooses how long to “think.” If confident, revise once; if unsure, search broadly.
+Easy problems benefit from quick revisions; hard ones need exploration.
 
 ---
 
-## Experiments & Findings
+### 3️⃣ FLOPs Trade-off: Pretraining vs Inference
 
-### Setup
+**FLOPs (think of them as “energy tokens”):**
 
-* **Dataset:** MATH benchmark (graded difficulty reasoning tasks)
-* **Base Model:** PaLM-2-S* fine-tuned on math reasoning data
-* **Verifier:** Process Reward Model (PRM) fine-tuned via Monte Carlo rollouts from the same MATH distribution
-* **Metrics:** Pass@1 accuracy, FLOPs efficiency, per-difficulty accuracy
-* **Compute Context:** Inference budget measured in FLOPs (test-time operations)
+* **Training FLOPs** = energy spent teaching the model facts
+* **Inference FLOPs** = energy spent letting it reason per question
 
-⚠️ Because both generator and verifier were math-domain fine-tuned, results show domain-specific optimization — generalization to open-ended tasks remains untested.
+When inference compute is cheap (few queries), spend it at test-time.
+When inference runs millions of times (e.g., ChatGPT scale), bigger pretraining wins.
 
----
-
-### Key Results
-
-#### 1️⃣ Adaptive Inference > Static Methods
-
-Adaptive controllers achieve baseline accuracy with ≈ ¼ compute.
-→ Spend more “thinking time” on hard problems, less on easy ones.
-
-#### 2️⃣ Beam Search Over-Optimization
-
-Beam search improves hard cases but hurts easy ones due to PRM bias.
-→ Like overthinking a simple question and changing a correct answer.
-
-#### 3️⃣ Sequential vs Parallel Trade-off
-
-Sequential = depth (refine answers).
-Parallel = breadth (diversify answers).
-→ Balance depends on task difficulty.
-
-#### 4️⃣ Difficulty-Dependent Allocation
-
-| Difficulty | Strategy              | Ratio (Sequential : Parallel) |
-| ---------- | --------------------- | ----------------------------- |
-| Easy       | Sequential Revisions  | 128 : 1                       |
-| Medium     | Hybrid Mix            | 32 : 4                        |
-| Hard       | Parallel Search + PRM | 4 : 32                        |
-
-#### 5️⃣ FLOPs-Matched Comparison
-
-* **Low inference load (R ≪ 1):** Small model + adaptive thinking wins.
-* **High load (R ≫ 1):** Larger model more cost-efficient long-term.
-
-🧩 Analogy: If you rarely drive, use gas wisely; if you drive daily, buy a bigger engine.
+[Figure: FLOPs vs. performance crossover curve]
 
 ---
 
-### Summary
+## Question 2: When Does Test-Time Compute Win?
 
-The adaptive controller reduces test-time compute by ≈ 4× on MATH while preserving accuracy.
-Yet true scalability depends on training verifiers for broader domains.
+**Prompt for audience**
+Suppose you must answer 1000 hard math questions but can’t retrain your model.
+Would you prefer:
+A) A bigger model or B) More compute per question?
+
+<details>
+<summary>Click to reveal answer</summary>
+
+If queries are few but hard → **B**, spend compute at inference.
+If queries are frequent (millions/day) → **A**, bigger model amortizes training cost.
+
+</details>
 
 ---
 
 ## Critical Analysis
 
-**Strengths**
+**What the paper accomplished well**
 
-* Unified view of test-time compute strategies
-* Concrete efficiency improvement (4×)
-* Practical insight for real-world LLM deployment
+* Unified multiple inference-time methods (revision, search, verifier)
+* Quantified when each strategy dominates
+* Demonstrated compute-optimal trade-offs with real PaLM-2 MATH fine-tuning
+* Introduced difficulty-adaptive reasoning — a step toward self-regulated inference
 
-**Limitations**
+**What could be developed further**
 
-* PRM bias and domain overfitting to MATH
-* Difficulty estimation cost not counted in FLOPs
-* Open-ended tasks (like dialogue) remain unexplored
-
-**Opportunities**
-
-* Lightweight difficulty predictors for real-time use
-* Verifier ensembles for robust generalization
-* Extension to multimodal and reasoning-intensive domains
+* **Difficulty estimation overhead:** current method (2048 samples) too costly
+* **Domain generalization:** tested only on math; open-ended reasoning unverified
+* **Verifier bias:** PRM can over-optimize wrong logic chains
+* **Revision drift:** later revisions sometimes undo correct reasoning
 
 ---
 
-## Impact & Future Work
+## Impact and Significance
 
-* **Paradigm Shift:** From *larger models* to *adaptive inference*.
-* **Economic Impact:** Cheaper deployment via compute budget routing.
-* **Research Influence:** Foundation for OpenAI o1 and DeepSeek R1 adaptive reasoning models.
-* **Future Work:** Integrate reinforcement learning controllers and extend beyond math reasoning.
+**Why it matters**
+
+* Shifts focus from *bigger* to *smarter* use of compute
+* Enables deployment of smaller, cheaper models with dynamic “thinking depth”
+* Provides a blueprint for adaptive compute routing in production LLMs
+
+**Influence**
+
+* Inspires reasoning-optimized systems (OpenAI o1, DeepSeek R1)
+* Sparks research into dynamic inference allocation and verifier-guided reasoning
+* Encourages sustainable compute practices — same accuracy, less energy
+
+[Figure: Timeline of influence on later LLMs]
 
 ---
 
-## Audience Questions
+## Connections to Related Work
 
-**Q 1:** Why does beam search sometimes reduce accuracy on easy problems under a PRM-based system?
-*(Hint: Verifier bias and over-optimization.)*
-
-**Q 2:** If you have 64 inference calls for a medium difficulty prompt, would you allocate them to more revisions or more parallel samples — and why?
+| Related Paper                                | Contribution                                |
+| -------------------------------------------- | ------------------------------------------- |
+| **Let’s Verify Step by Step** (OpenAI 2023)  | Stepwise reward models for reasoning        |
+| **PRM800K** (OpenAI 2023)                    | Training data for process verifiers         |
+| **AlphaGo / AlphaZero** (DeepMind 2016-2017) | Lookahead search as inference scaling       |
+| **DeepSeek R1** (2024)                       | Practical use of adaptive compute reasoning |
+| **Scaling Laws for Compute** (Kaplan et al.) | Foundation for compute-optimal analysis     |
 
 ---
 
-## Resources & Citation
+## Resource Links
 
-1. [arXiv Paper (2408.03314)](https://arxiv.org/abs/2408.03314)
-2. [MATH Dataset](https://github.com/hendrycks/math)
-3. [Yannic Kilcher Review Video](https://www.youtube.com/watch?v=AfAmwIP2ntY&t=2573s)
-4. [PRM800K (OpenAI)](https://openai.com/research/prm800k)
-5. [DeepSeek R1 Follow-up System](https://github.com/deepseek-ai)
+1. [Original Paper – arXiv:2408.03314](https://arxiv.org/abs/2408.03314)
+2. [MATH Dataset – GitHub Repo](https://github.com/hendrycks/math)
+3. [Yannic Kilcher Video Review](https://www.youtube.com/watch?v=AfAmwIP2ntY)
+4. [Process Reward Model (PRM800K)](https://openai.com/research/prm800k)
+5. [OpenAI o1 / DeepSeek R1 Follow-Ups](https://arxiv.org/)
+
+---
+
+## Citation
 
 ```bibtex
 @article{snell2024scaling,
@@ -290,10 +288,4 @@ Yet true scalability depends on training verifiers for broader domains.
 
 ---
 
-### Closing Remark
 
-> 🧩 *Smarter inference can outperform bigger models — when LLMs learn how long to think, they learn to reason like us.*
-
----
-
-This final version follows the **exact flow and tone** of the *Constitutional-AI* repo while preserving all your paper-specific technical content, pseudocode, fine-tuning notes, and analogies for clarity.
