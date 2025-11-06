@@ -4,6 +4,7 @@
 
 > **Authors:** Charlie Snell¹, Jaehoon Lee², Kelvin Xu², Aviral Kumar²
 > **Affiliations:** ¹UC Berkeley, ²Google DeepMind
+
 > **Presenter:** Adithya Kalidindi
 > **Date:** November 6, 2025
 
@@ -179,14 +180,14 @@ Adaptive allocation yielded the headline **4× efficiency improvement**.
 ---
 
 
-## 5.🧠 **Methodology: Scaling LLM Test-Time Compute**
+## 5 | 🧠 **Methodology: Scaling LLM Test-Time Compute**
 
 The paper evaluates **how to allocate inference-time compute efficiently** to maximize reasoning accuracy per FLOP.
 It proceeds through **five ordered stages**, combining difficulty modeling, verifier-based search, and revision-based refinement.
 
 ---
 
-### **1️Base Setup and Task**
+### **Base Setup and Task**
 
 * **Task:** Mathematical reasoning using the **MATH benchmark**.
 * **Goal:** Measure whether *smaller models that think longer* can match or outperform *larger models that think once*, when total compute is held constant.
@@ -307,7 +308,7 @@ Finally, the authors formalize when to spend compute on **training larger models
 ---
 
 
-## 6. 🧠 **Results: Scaling Test-Time Compute Efficiently**
+## 6 | 🧠 **Results: Scaling Test-Time Compute Efficiently**
 
 ### **Core Finding**
 
@@ -437,7 +438,7 @@ scaling test-time compute is **strictly more efficient** than scaling parameters
 
 ---
 
-### 🎯 7. Key Insights
+### 🎯 7 | Key Insights
 
 1. **Adaptive compute allocation** yields up to **4× higher efficiency** than static inference.
 2. **Difficulty-specific strategies** maximize reasoning efficiency.
