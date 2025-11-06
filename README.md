@@ -277,6 +277,15 @@ Beam search shines on difficult questions but may over-optimize easy ones.
 
 Revision models steadily improved with more steps — mimicking a student refining their answer.
 
+| Method              | Best For      | FLOPs Scaling | Strengths                             |
+| ------------------- | ------------- | ------------- | ------------------------------------- |
+| Best-of-N Sampling  | All problems  | Linear in N   | Simple baseline, works for easy tasks |
+| Beam Search         | Hard problems | Efficient     | Guides search with PRM                |
+| Lookahead Search    | Hard problems | High          | More precise, costlier                |
+| Sequential Revision | Easy/medium   | Low           | Efficient, refines local reasoning    |
+| Parallel Sampling   | Hard/diverse  | Linear        | Covers diverse global solutions       |
+
+
 ---
 
 ## 🔍 8 | Critical Analysis
