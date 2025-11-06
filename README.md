@@ -25,7 +25,7 @@
 
 ## 🎯 Overview
 
-> **The Big Idea:** Instead of always training bigger models, can we use more compute at **test-time** to make smaller models perform just as well?
+> **The Big Idea:** Instead of always training bigger models, can we use more compute at **test-time** to make smaller models perform just as well?This paper investigates how to optimally scale inference-time computation in Large Language Models (LLMs) to improve performance on challenging prompts. The key question: If an LLM can use a fixed amount of test-time compute, how much can it improve?
 
 ### What This Paper Shows
 
